@@ -1,0 +1,26 @@
+{
+  "name": "Gestor Ecowash",
+  "short_name": "Gestor Ecowash",
+  "description": "Sistema de control de caja · Eco Wash Service",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2a8ec1",
+  "theme_color": "#2a8ec1",
+  "lang": "es-AR",
+  "icons": [
+    {
+      "src": "/img/icono-192-app.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/img/logo-ecowash-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
