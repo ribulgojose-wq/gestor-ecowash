@@ -19,7 +19,11 @@ $reg = $stmt->fetch();
 if (!$reg) { header('Location: /pendientes.php?msg=ya_cobrado'); exit; }
 
 $iconos  = ['moto'=>'🏍️','auto'=>'🚗','suv'=>'🚙','pickup'=>'🛻'];
-$nombres = ['moto'=>'Moto','auto'=>'Auto','suv'=>'SUV','pickup'=>'Pickup'];
+$nombres = ['moto'=>'Moto','auto'=>'Auto','suv'=>'SUV / Utilitario','pickup'=>'Pick Up'];
+
+// ── Precios según método de pago ──────────────────────────────────────────
+$precios_efectivo = ['moto'=>13000,'auto'=>24000,'suv'=>26000,'pickup'=>29000];
+$precios_tarjeta  = ['moto'=>15000,'auto'=>26000,'suv'=>28000,'pickup'=>31000];
 
 // Procesar el pago si viene el POST
 $error = '';
@@ -28,9 +32,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!in_array($metodo, ['efectivo','tarjeta'])) {
         $error = 'Seleccioná un método de pago.';
     } else {
-        // Actualizar en DB
-        $pdo->prepare("UPDATE $tl SET estado='pagado', metodo_pago=?, hora_pago=? WHERE id=?")
-            ->execute([$metodo, date('H:i:s'), $id]);
+        // Determinar monto final según método de pago
+        $tabla_precios = ($metodo === 'efectivo') ? $precios_efectivo : $precios_tarjeta;
+        $monto_final   = $tabla_precios[$reg->tipo_vehiculo] ?? floatval($reg->monto);
+
+        // Actualizar en DB con el monto correcto
+        $pdo->prepare("UPDATE $tl SET estado='pagado', metodo_pago=?, hora_pago=?, monto=? WHERE id=?")
+            ->execute([$metodo, date('H:i:s'), $monto_final, $id]);
 
         // Webhook Make.com
         $body = json_encode([
@@ -44,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'telefono'       => $reg->telefono,
             'marca_modelo'   => $reg->marca_modelo ?: '',
             'tipo_vehiculo'  => $reg->tipo_vehiculo,
-            'monto'          => floatval($reg->monto),
+            'monto'          => $monto_final,
             'metodo_pago'    => $metodo,
             'hora_ingreso'   => $reg->hora_ingreso,
             'hora_pago'      => date('H:i:s'),
@@ -66,6 +74,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+
+// Pasar precios al JS como JSON
+$tipo = $reg->tipo_vehiculo;
+$precio_ef = $precios_efectivo[$tipo] ?? 0;
+$precio_tj = $precios_tarjeta[$tipo]  ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -88,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       font-size:16px;font-weight:700;cursor:pointer;
       color:#1e6a94 !important;-webkit-text-fill-color:#1e6a94 !important;
       background:#ffffff !important;-webkit-appearance:none;font-family:system-ui;
-      display:flex;flex-direction:column;align-items:center;gap:8px;
+      display:flex;flex-direction:column;align-items:center;gap:6px;
       transition:all .15s;
     }
     .btn-pago:active{transform:scale(.97)}
@@ -96,10 +109,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .btn-ef:active{background:#f0fdf4 !important}
     .btn-tj{border-color:#93c5fd !important}
     .btn-tj:active{background:#eff6ff !important}
-    /* Ocultar el input radio pero usar el botón como label */
     input[type=radio]{display:none}
     .btn-pago.selected-ef{background:#f0fdf4 !important;border-color:#16a34a !important;color:#16a34a !important;-webkit-text-fill-color:#16a34a !important}
     .btn-pago.selected-tj{background:#eff6ff !important;border-color:#2563eb !important;color:#2563eb !important;-webkit-text-fill-color:#2563eb !important}
+    .precio-display{font-size:36px;font-weight:700;color:#1e6a94;transition:all .2s}
+    .precio-display.ef{color:#16a34a !important}
+    .precio-display.tj{color:#2563eb !important}
     #btnConfirmar{
       width:100%;padding:16px;border-radius:14px;border:none !important;
       background:#c7d03b !important;color:#3a4700 !important;-webkit-text-fill-color:#3a4700 !important;
@@ -108,6 +123,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       display:none;
     }
     #btnConfirmar.visible{display:block}
+    .precio-hint{font-size:11px;color:#94a3b8;margin-top:2px;transition:color .2s}
+    .precio-hint.ef{color:#16a34a !important}
+    .precio-hint.tj{color:#2563eb !important}
   </style>
 </head>
 <body>
@@ -146,11 +164,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php endif ?>
     </div>
 
-    <!-- Monto -->
-    <div style="background:#e8f4fb;border-radius:14px;padding:16px">
+    <!-- Monto dinámico -->
+    <div style="background:#e8f4fb;border-radius:14px;padding:16px" id="montoBox">
       <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#1e6a94;margin-bottom:4px">Monto a cobrar</div>
-      <div style="font-size:36px;font-weight:700;color:#1e6a94">$<?= number_format($reg->monto,0,',','.') ?></div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:2px">Precio fijo · no modificable</div>
+      <div class="precio-display" id="precioDisplay">Seleccioná método</div>
+      <div class="precio-hint" id="precioHint">El precio varía según el método de pago</div>
     </div>
   </div>
 
@@ -164,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="btn-pago btn-ef" id="btn-ef">
           <span style="font-size:36px">💵</span>
           <span>Efectivo</span>
+          <span style="font-size:13px;font-weight:600">$<?= number_format($precio_ef,0,',','.') ?></span>
         </div>
       </label>
       <label onclick="seleccionar('tarjeta')">
@@ -171,6 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="btn-pago btn-tj" id="btn-tj">
           <span style="font-size:36px">💳</span>
           <span>Tarjeta</span>
+          <span style="font-size:13px;font-weight:600">$<?= number_format($precio_tj,0,',','.') ?></span>
         </div>
       </label>
     </div>
@@ -188,12 +208,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 <script>
+const PRECIOS = {
+  efectivo: <?= json_encode($precio_ef) ?>,
+  tarjeta:  <?= json_encode($precio_tj) ?>
+};
+
+function formatPeso(n){
+  return '$' + n.toLocaleString('es-AR');
+}
+
 function seleccionar(metodo){
+  // Botones
   document.getElementById('btn-ef').className = 'btn-pago btn-ef' + (metodo==='efectivo'?' selected-ef':'');
   document.getElementById('btn-tj').className = 'btn-pago btn-tj' + (metodo==='tarjeta'?' selected-tj':'');
-  document.getElementById('btnConfirmar').classList.add('visible');
-  // Marcar el radio correcto
+
+  // Radio
   document.querySelector('input[value="'+metodo+'"]').checked = true;
+
+  // Monto dinámico
+  const display = document.getElementById('precioDisplay');
+  const hint    = document.getElementById('precioHint');
+  const cls     = metodo === 'efectivo' ? 'ef' : 'tj';
+  const opuesto = metodo === 'efectivo' ? 'tarjeta' : 'efectivo';
+
+  display.textContent = formatPeso(PRECIOS[metodo]);
+  display.className   = 'precio-display ' + cls;
+
+  hint.textContent = metodo === 'efectivo'
+    ? '💵 Precio efectivo — tarjeta: ' + formatPeso(PRECIOS.tarjeta)
+    : '💳 Precio tarjeta — efectivo: '  + formatPeso(PRECIOS.efectivo);
+  hint.className = 'precio-hint ' + cls;
+
+  // Mostrar botón confirmar
+  document.getElementById('btnConfirmar').classList.add('visible');
 }
 </script>
 </body>
