@@ -9,7 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = json_decode(file_get_contents('php://input'), true) ?: $_POST;
-$precios = ['moto'=>15000,'auto'=>26000,'suv'=>28000,'pickup'=>31000];
+
+// ── Precios según método de pago ──────────────────────────────────────────
+$precios_efectivo = ['moto'=>13000,'auto'=>24000,'suv'=>26000,'pickup'=>29000];
+$precios_tarjeta  = ['moto'=>15000,'auto'=>26000,'suv'=>28000,'pickup'=>31000];
 
 $patente        = strtoupper(trim($input['patente']       ?? ''));
 $nombre_cliente = trim($input['nombre_cliente']           ?? '');
@@ -23,10 +26,12 @@ $errores = [];
 if (!$patente || strlen($patente)<5 || strlen($patente)>10) $errores[] = 'Patente inválida.';
 if (!$nombre_cliente) $errores[] = 'El nombre del cliente es obligatorio.';
 if (!$telefono)       $errores[] = 'El teléfono es obligatorio.';
-if (!array_key_exists($tipo_vehiculo, $precios)) $errores[] = 'Tipo de vehículo inválido.';
+if (!array_key_exists($tipo_vehiculo, $precios_efectivo)) $errores[] = 'Tipo de vehículo inválido.';
 if ($errores) { http_response_code(422); echo json_encode(['ok'=>false,'errores'=>$errores]); exit; }
 
-$monto = $precios[$tipo_vehiculo];
+// Guardamos el precio de efectivo como referencia; se actualiza al cobrar
+$monto = $precios_efectivo[$tipo_vehiculo];
+
 $pdo   = getDB();
 $tl    = DB_PREFIX . 'lavados';
 
